@@ -2,6 +2,8 @@ import streamlit as st
 from backend import chatbot
 from langchain.messages import HumanMessage, AIMessage
 
+config = {'configurable':{'thread_id':1}}
+
 if 'messages' not in st.session_state:
     st.session_state['messages']=[]
 
@@ -19,18 +21,14 @@ if user_input:
         })
         st.text(user_input)
     with st.chat_message('assistant'):
-        config = {
-            'configurable':{
-                'thread_id':1,
-            }
-        }
-        content = chatbot.invoke({
-            'messages' :[
+        ai_msg = st.write_stream( message_chunk.content for message_chunk, metadata in chatbot.stream({
+            'messages':[
                 HumanMessage(content=user_input)
             ]
-        },config=config)['messages'][-1].content
+        },
+        config=config,
+        stream_mode='messages'))
         st.session_state['messages'].append({
-        'role':'assistant',
-        'content':content
-    })
-        st.text(content)
+    'role':'assistant',
+    'content':ai_msg
+})
