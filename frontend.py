@@ -1,7 +1,9 @@
 import streamlit as st
-from backend import chatbot
+from backend import chatbot, retrieve_threads
 from langchain_core.messages import HumanMessage, AIMessage
 import uuid
+
+# *****************************************Utility functions*******************************************
 
 def generate_id():
     thread_id = uuid.uuid4()
@@ -23,7 +25,7 @@ def load_messages(thread_id):
 
 
 if 'thread_history' not in st.session_state:
-    st.session_state['thread_history']=[]
+    st.session_state['thread_history']=retrieve_threads()
 
 
 if 'message_history' not in st.session_state:
@@ -38,6 +40,10 @@ add_thread(st.session_state['thread_id'])
 for message in st.session_state['message_history'][::]:
     with st.chat_message(message['role']):
         st.text(message['content'])
+
+config = {'configurable':{'thread_id':st.session_state['thread_id']}}
+
+# *****************************************Sidebar*******************************************
 
 st.sidebar.title('Langgraph Chatbot')
 
@@ -61,7 +67,8 @@ for thread_id in st.session_state['thread_history']:
 
         st.session_state['message_history']=temp_messages
 
-config = {'configurable':{'thread_id':st.session_state['thread_id']}}
+# *****************************************chat UI*******************************************
+
 user_input = st.chat_input()
 
 if user_input:
