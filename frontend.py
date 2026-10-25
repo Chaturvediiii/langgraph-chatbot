@@ -41,7 +41,15 @@ for message in st.session_state['message_history'][::]:
     with st.chat_message(message['role']):
         st.text(message['content'])
 
-config = {'configurable':{'thread_id':st.session_state['thread_id']}}
+config = {
+    'configurable':{
+        'thread_id': st.session_state['thread_id']
+    },
+    'metadata':{
+        'thread_id': st.session_state['thread_id']
+    },
+    'run_name':'chat_turn'
+}
 
 # *****************************************Sidebar*******************************************
 
