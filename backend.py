@@ -11,6 +11,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from sentence_transformers import sentence_transformer
+from langgraph.types import interrupt, Command
 
 from langchain_community.tools import DuckDuckGoSearchRun 
 from langchain_core.tools import tool
@@ -84,29 +85,6 @@ def ingest_pdf(file_bytes: bytes, thread_id: str, filename: Optional[str] = None
 
 search_tool = DuckDuckGoSearchRun(region="us-en")
 
-@tool
-def rag_tool(query: str, thread_id: Optional[str] = None) -> dict:
-    """
-    Retrieve relevant information from the uploaded PDF for this chat thread.
-    Always include the thread_id when calling this tool.
-    """
-    retriever = _get_retriever(thread_id)
-    if retriever is None:
-        return {
-            "error": "No document indexed for this chat. Upload a PDF first.",
-            "query": query,
-        }
-
-    result = retriever.invoke(query)
-    context = [doc.page_content for doc in result]
-    metadata = [doc.metadata for doc in result]
-
-    return {
-        "query": query,
-        "context": context,
-        "metadata": metadata,
-        "source_file": _THREAD_METADATA.get(str(thread_id), {}).get("filename"),
-    }
 
 @tool
 def web_search(query: str) -> str:
@@ -146,7 +124,59 @@ def get_stock_price(symbol : str)->dict:
     res = requests.get(url)
     return res.json()
 
-tools = [get_stock_price,web_search,calculator, rag_tool]
+@tool
+def rag_tool(query: str, thread_id: Optional[str] = None) -> dict:
+    """
+    Retrieve relevant information from the uploaded PDF for this chat thread.
+    Always include the thread_id when calling this tool.
+    """
+    retriever = _get_retriever(thread_id)
+    if retriever is None:
+        return {
+            "error": "No document indexed for this chat. Upload a PDF first.",
+            "query": query,
+        }
+
+    result = retriever.invoke(query)
+    context = [doc.page_content for doc in result]
+    metadata = [doc.metadata for doc in result]
+
+    return {
+        "query": query,
+        "context": context,
+        "metadata": metadata,
+        "source_file": _THREAD_METADATA.get(str(thread_id), {}).get("filename"),
+    }
+
+@tool
+def purchase_stocks(symbol: str, quantity:int)->dict:
+    """
+    Simulate purchasing a given quantity of a stock symbol.
+
+    HUMAN-IN-THE-LOOP:
+    Before confirming the purchase, this tool will interrupt
+    and wait for a human decision ("yes" / anything else).
+    """
+
+    decision = interrupt(f"Approve buying {quantity} shares of {symbol}? (yes/no)")
+
+    if isinstance(decision,str) and decision.lower()=="yes":
+        return {
+            "status":"success",
+            "message": f"Purchase order placed for {quantity} shares of {symbol}.",
+            "symbol":symbol,
+            "quantity":quantity,
+        }
+
+    else:
+        return {
+            "status":"success",
+            "message": f"Purchase order for {quantity} shares of {symbol} was declined by human.",
+            "symbol":symbol,
+            "quantity":quantity,
+        }
+
+tools = [get_stock_price,web_search,calculator, rag_tool, purchase_stocks]
 llm_with_tools = llm.bind_tools(tools)
 
 class ChatState(TypedDict):

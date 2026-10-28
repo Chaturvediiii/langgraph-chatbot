@@ -7,6 +7,7 @@ from backend import (
 )
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 import uuid
+from langgraph.types import Command
 
 # *****************************************Utility functions*******************************************
 
@@ -27,6 +28,15 @@ def reset_chat():
 def load_messages(thread_id):
     state = chatbot.get_state(config={'configurable': {'thread_id': thread_id}})
     return state.values.get('messages', [])
+
+def get_pending_approval(config):
+    state = chatbot.get_state(config)
+
+    for task in state.tasks:
+        for interrupt_obj in task.interrupts:
+            return interrupt_obj.value
+
+        return None
 
 
 if 'thread_history' not in st.session_state:
@@ -179,3 +189,87 @@ if user_input:
         "content": ai_message,
     }
 )
+
+
+# ***************************************** Human-in-the-loop approval *******************************************
+
+pending_approval = get_pending_approval(config)
+
+if pending_approval is not None:
+    st.warning("Human approval required")
+
+    # Show the interrupt message from the tool
+    st.write(pending_approval)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        approve = st.button(
+            "✅ Approve",
+            key=f"approve_{thread_key}",
+            use_container_width=True,
+        )
+
+    with col2:
+        decline = st.button(
+            "❌ Decline",
+            key=f"decline_{thread_key}",
+            use_container_width=True,
+        )
+
+    decision = None
+
+    if approve:
+        decision = "yes"
+    elif decline:
+        decision = "no"
+
+    if decision is not None:
+        with st.chat_message("assistant"):
+            with st.status(
+                "Resuming workflow...",
+                expanded=True,
+            ) as status_box:
+
+                def resume_stream():
+                    for message_chunk, metadata in chatbot.stream(
+                        Command(resume=decision),
+                        config=config,
+                        stream_mode="messages",
+                    ):
+                        if isinstance(message_chunk, ToolMessage):
+                            tool_name = (
+                                getattr(message_chunk, "name", None)
+                                or "tool"
+                            )
+                            status_box.update(
+                                label=f"🔧 Executing {tool_name}...",
+                                state="running",
+                                expanded=True,
+                            )
+
+                        elif isinstance(message_chunk, AIMessage):
+                            if (
+                                isinstance(message_chunk.content, str)
+                                and message_chunk.content
+                                and not message_chunk.tool_calls
+                            ):
+                                yield message_chunk.content
+
+                final_response = st.write_stream(resume_stream())
+
+                status_box.update(
+                    label="✅ Workflow completed",
+                    state="complete",
+                    expanded=False,
+                )
+
+        # Save the final response in Streamlit's chat history
+        if final_response:
+            st.session_state["message_history"].append({
+                "role": "assistant",
+                "content": final_response,
+            })
+
+            st.rerun()
+
